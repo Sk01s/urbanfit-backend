@@ -1,0 +1,43 @@
+{
+  "name": "urbanfit-backend",
+  "version": "1.0.0",
+  "description": "Backend services for Firebase Storage to Backblaze B2 migration",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "migrate": "node scripts/migrate.js",
+    "migrate:dry": "node scripts/migrate.js migrate products --dry-run",
+    "migrate:retry": "node scripts/migrate.js retry products",
+    "migrate:report": "node scripts/migrate.js report",
+    "migrate:cleanup": "node scripts/migrate.js cleanup"
+  },
+  "dependencies": {
+    "@fastify/cors": "^8.4.0",
+    "@fastify/multipart": "^8.0.0",
+    "axios": "^1.6.0",
+    "backblaze-b2": "^1.7.0",
+    "dotenv": "^16.3.1",
+    "fastify": "^4.24.3",
+    "firebase": "^8.4.3",
+    "firebase-admin": "^13.6.0",
+    "node-cron": "^3.0.3",
+    "pino-pretty": "^10.2.3",
+    "resend": "^2.1.0",
+    "uuid": "^8.3.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [
+    "firebase",
+    "backblaze",
+    "b2",
+    "migration",
+    "storage",
+    "firestore"
+  ],
+  "author": "Urbanfit Team",
+  "license": "MIT"
+}
