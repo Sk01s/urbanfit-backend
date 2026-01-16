@@ -27,12 +27,6 @@ emailService.initialize();
 const fastify = Fastify({
   logger: {
     level: "info",
-    transport: {
-      target: "pino-pretty",
-      options: {
-        colorize: true,
-      },
-    },
   },
 });
 
@@ -881,7 +875,7 @@ fastify.get("/api/shipping/rate/:city", async (request, reply) => {
     // Find the rate for the city (case-insensitive)
     const cityLower = city.toLowerCase().trim();
     const cityRate = rates.find(
-      (r) => r.city.toLowerCase().trim() === cityLower
+      (r) => r.city.toLowerCase().trim() === cityLower,
     );
 
     return {
@@ -975,7 +969,7 @@ fastify.post("/api/admin/shipping/rates", async (request, reply) => {
 
     // Check if city already exists (case-insensitive)
     const existingIndex = currentRates.findIndex(
-      (r) => r.city.toLowerCase().trim() === city.toLowerCase().trim()
+      (r) => r.city.toLowerCase().trim() === city.toLowerCase().trim(),
     );
 
     if (existingIndex >= 0) {
@@ -1033,7 +1027,7 @@ fastify.delete("/api/admin/shipping/rates/:city", async (request, reply) => {
     // Find and remove the city (case-insensitive)
     const cityLower = city.toLowerCase().trim();
     const newRates = currentRates.filter(
-      (r) => r.city.toLowerCase().trim() !== cityLower
+      (r) => r.city.toLowerCase().trim() !== cityLower,
     );
 
     if (newRates.length === currentRates.length) {
