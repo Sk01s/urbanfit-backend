@@ -809,6 +809,257 @@ cron.schedule("0 0 * * *", () => {
   }
 });
 
+// ============================================
+// SHIPPING RATES ENDPOINTS
+// ============================================
+
+// Default shipping rates for common Lebanese cities
+const defaultShippingRates = [
+  { city: "Beirut", rate: 3 },
+  { city: "Tripoli", rate: 5 },
+  { city: "Sidon", rate: 5 },
+  { city: "Tyre", rate: 6 },
+  { city: "Jounieh", rate: 4 },
+  { city: "Byblos", rate: 5 },
+  { city: "Baalbek", rate: 7 },
+  { city: "Zahle", rate: 6 },
+  { city: "Nabatieh", rate: 6 },
+  { city: "Batroun", rate: 5 },
+];
+
+// Get all shipping rates
+fastify.get("/api/shipping/rates", async (request, reply) => {
+  try {
+    const doc = await firebase.db
+      .collection("settings")
+      .doc("shippingRates")
+      .get();
+
+    if (doc.exists) {
+      return {
+        success: true,
+        data: doc.data(),
+      };
+    }
+
+    // Return defaults if no settings exist
+    return {
+      success: true,
+      data: {
+        rates: defaultShippingRates,
+        defaultRate: 5,
+        enabled: true,
+      },
+    };
+  } catch (error) {
+    fastify.log.error("Failed to get shipping rates:", error);
+    return reply.status(500).send({
+      error: "Failed to get shipping rates",
+      message: error.message,
+    });
+  }
+});
+
+// Get shipping rate for a specific city
+fastify.get("/api/shipping/rate/:city", async (request, reply) => {
+  try {
+    const { city } = request.params;
+    const doc = await firebase.db
+      .collection("settings")
+      .doc("shippingRates")
+      .get();
+
+    let rates = defaultShippingRates;
+    let defaultRate = 5;
+
+    if (doc.exists) {
+      const data = doc.data();
+      rates = data.rates || defaultShippingRates;
+      defaultRate = data.defaultRate || 5;
+    }
+
+    // Find the rate for the city (case-insensitive)
+    const cityLower = city.toLowerCase().trim();
+    const cityRate = rates.find(
+      (r) => r.city.toLowerCase().trim() === cityLower
+    );
+
+    return {
+      success: true,
+      city: city,
+      rate: cityRate ? cityRate.rate : defaultRate,
+      isDefault: !cityRate,
+    };
+  } catch (error) {
+    fastify.log.error("Failed to get shipping rate:", error);
+    return reply.status(500).send({
+      error: "Failed to get shipping rate",
+      message: error.message,
+    });
+  }
+});
+
+// Update all shipping rates (admin only)
+fastify.put("/api/admin/shipping/rates", async (request, reply) => {
+  try {
+    const { rates, defaultRate, enabled } = request.body;
+
+    if (!Array.isArray(rates)) {
+      return reply.status(400).send({
+        error: "Rates must be an array",
+      });
+    }
+
+    // Validate rates format
+    for (const rate of rates) {
+      if (!rate.city || typeof rate.rate !== "number" || rate.rate < 0) {
+        return reply.status(400).send({
+          error:
+            "Each rate must have a city name and a non-negative rate number",
+        });
+      }
+    }
+
+    const updates = {
+      rates: rates,
+      defaultRate: defaultRate || 5,
+      enabled: enabled !== false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await firebase.db
+      .collection("settings")
+      .doc("shippingRates")
+      .set(updates, { merge: true });
+
+    return {
+      success: true,
+      message: "Shipping rates updated successfully",
+      data: updates,
+    };
+  } catch (error) {
+    fastify.log.error("Failed to update shipping rates:", error);
+    return reply.status(500).send({
+      error: "Failed to update shipping rates",
+      message: error.message,
+    });
+  }
+});
+
+// Add a new city rate
+fastify.post("/api/admin/shipping/rates", async (request, reply) => {
+  try {
+    const { city, rate } = request.body;
+
+    if (!city || typeof rate !== "number" || rate < 0) {
+      return reply.status(400).send({
+        error: "City name and a non-negative rate are required",
+      });
+    }
+
+    const doc = await firebase.db
+      .collection("settings")
+      .doc("shippingRates")
+      .get();
+    let currentRates = defaultShippingRates;
+    let settings = { defaultRate: 5, enabled: true };
+
+    if (doc.exists) {
+      const data = doc.data();
+      currentRates = data.rates || defaultShippingRates;
+      settings = {
+        defaultRate: data.defaultRate || 5,
+        enabled: data.enabled !== false,
+      };
+    }
+
+    // Check if city already exists (case-insensitive)
+    const existingIndex = currentRates.findIndex(
+      (r) => r.city.toLowerCase().trim() === city.toLowerCase().trim()
+    );
+
+    if (existingIndex >= 0) {
+      // Update existing rate
+      currentRates[existingIndex].rate = rate;
+    } else {
+      // Add new rate
+      currentRates.push({ city: city.trim(), rate });
+    }
+
+    const updates = {
+      ...settings,
+      rates: currentRates,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await firebase.db.collection("settings").doc("shippingRates").set(updates);
+
+    return {
+      success: true,
+      message:
+        existingIndex >= 0
+          ? "Rate updated successfully"
+          : "New city rate added successfully",
+      data: updates,
+    };
+  } catch (error) {
+    fastify.log.error("Failed to add shipping rate:", error);
+    return reply.status(500).send({
+      error: "Failed to add shipping rate",
+      message: error.message,
+    });
+  }
+});
+
+// Delete a city rate
+fastify.delete("/api/admin/shipping/rates/:city", async (request, reply) => {
+  try {
+    const { city } = request.params;
+
+    const doc = await firebase.db
+      .collection("settings")
+      .doc("shippingRates")
+      .get();
+
+    if (!doc.exists) {
+      return reply.status(404).send({
+        error: "No shipping rates configured",
+      });
+    }
+
+    const data = doc.data();
+    const currentRates = data.rates || [];
+
+    // Find and remove the city (case-insensitive)
+    const cityLower = city.toLowerCase().trim();
+    const newRates = currentRates.filter(
+      (r) => r.city.toLowerCase().trim() !== cityLower
+    );
+
+    if (newRates.length === currentRates.length) {
+      return reply.status(404).send({
+        error: "City not found in shipping rates",
+      });
+    }
+
+    await firebase.db.collection("settings").doc("shippingRates").update({
+      rates: newRates,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return {
+      success: true,
+      message: "City rate deleted successfully",
+    };
+  } catch (error) {
+    fastify.log.error("Failed to delete shipping rate:", error);
+    return reply.status(500).send({
+      error: "Failed to delete shipping rate",
+      message: error.message,
+    });
+  }
+});
+
 // Error handler
 fastify.setErrorHandler((error, request, reply) => {
   fastify.log.error(error);
