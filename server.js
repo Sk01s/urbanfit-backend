@@ -1064,31 +1064,40 @@ fastify.setErrorHandler((error, request, reply) => {
   });
 });
 
-// Start server
-const start = async () => {
-  try {
-    const port = process.env.PORT || 3001;
-    await fastify.listen({ port, host: "0.0.0.0" });
-    console.log(`Server running on port ${port}`);
-  } catch (error) {
-    fastify.log.error(error);
-    process.exit(1);
-  }
-};
+// Check if running in Vercel serverless environment
+const isVercel = process.env.VERCEL === "1";
 
-// Graceful shutdown
-process.on("SIGTERM", async () => {
-  console.log("Received SIGTERM, shutting down gracefully");
-  await fastify.close();
-  process.exit(0);
-});
+if (!isVercel) {
+  // Start server normally for local development
+  const start = async () => {
+    try {
+      const port = process.env.PORT || 3001;
+      await fastify.listen({ port, host: "0.0.0.0" });
+      console.log(`Server running on port ${port}`);
+    } catch (error) {
+      fastify.log.error(error);
+      process.exit(1);
+    }
+  };
 
-process.on("SIGINT", async () => {
-  console.log("Received SIGINT, shutting down gracefully");
-  await fastify.close();
-  process.exit(0);
-});
+  // Graceful shutdown
+  process.on("SIGTERM", async () => {
+    console.log("Received SIGTERM, shutting down gracefully");
+    await fastify.close();
+    process.exit(0);
+  });
 
-start();
+  process.on("SIGINT", async () => {
+    console.log("Received SIGINT, shutting down gracefully");
+    await fastify.close();
+    process.exit(0);
+  });
 
-export default fastify;
+  start();
+}
+
+// Export for Vercel serverless
+export default async function handler(req, res) {
+  await fastify.ready();
+  fastify.server.emit("request", req, res);
+}
