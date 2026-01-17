@@ -13,6 +13,7 @@ import Fastify from "fastify";
 import multipart from "@fastify/multipart";
 import cors from "@fastify/cors";
 import cron from "node-cron";
+import { request } from "http";
 
 // Dynamically import services after dotenv is loaded
 const firebase = (await import("./src/services/firebaseAdmin.js")).default;
@@ -25,9 +26,7 @@ const emailService = (await import("./src/services/emailService.js")).default;
 emailService.initialize();
 
 const fastify = Fastify({
-  logger: {
-    level: "info",
-  },
+  logger: true,
 });
 
 // Register plugins
@@ -41,7 +40,9 @@ await fastify.register(cors, {
   origin: true, // Allow all origins in development
   credentials: true,
 });
-
+fastify.get("/", (request, reply) => {
+  return { "hello": "world" }
+})
 // Health check endpoint
 fastify.get("/health", async (request, reply) => {
   return { status: "ok", timestamp: new Date().toISOString() };
