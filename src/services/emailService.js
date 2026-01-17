@@ -52,7 +52,8 @@ class EmailService {
       0
     );
     const discount = (subtotal * (order.promo?.percentage || 0)) / 100;
-    const shipping = order.shipping || 5;
+    // Use shippingRate from order (set during checkout based on city), fallback to legacy 'shipping' field or default
+    const shipping = order.shippingRate ?? order.shipping ?? 5;
     const total = subtotal - discount + shipping;
 
     return `
@@ -183,7 +184,8 @@ class EmailService {
       0
     );
     const discount = (subtotal * (order.promo?.percentage || 0)) / 100;
-    const shipping = order.shipping || 5;
+    // Use shippingRate from order (set during checkout based on city), fallback to legacy 'shipping' field or default
+    const shipping = order.shippingRate ?? order.shipping ?? 5;
     const total = subtotal - discount + shipping;
 
     return `
@@ -556,7 +558,8 @@ class EmailService {
       0
     );
     const discount = (subtotal * (order.promo?.percentage || 0)) / 100;
-    const shipping = order.shipping || 5;
+    // Use shippingRate from order (set during checkout based on city), fallback to legacy 'shipping' field or default
+    const shipping = order.shippingRate ?? order.shipping ?? 5;
     return subtotal - discount + shipping;
   }
 }

@@ -12,18 +12,16 @@ dotenv.config({ path: path.join(__dirname, ".env") });
 import Fastify from "fastify";
 import multipart from "@fastify/multipart";
 import cors from "@fastify/cors";
-import cron from "node-cron";
-import { request } from "http";
 
 // Dynamically import services after dotenv is loaded
 const firebase = (await import("./src/services/firebaseAdmin.js")).default;
 const backblazeB2 = (await import("./src/services/backblazeB2.js")).default;
-const FirebaseToB2Migration = (await import("./src/services/migration.js"))
-  .default;
 const emailService = (await import("./src/services/emailService.js")).default;
+const storeService = (await import("./src/services/storeService.js")).default;
 
-// Initialize email service
+// Initialize services
 emailService.initialize();
+storeService.initialize(firebase.db);
 
 const fastify = Fastify({
   logger: true,
@@ -40,9 +38,11 @@ await fastify.register(cors, {
   origin: true, // Allow all origins in development
   credentials: true,
 });
+
 fastify.get("/", (request, reply) => {
-  return { "hello": "world" }
-})
+  return { hello: "world" };
+});
+
 // Health check endpoint
 fastify.get("/health", async (request, reply) => {
   return { status: "ok", timestamp: new Date().toISOString() };
@@ -100,268 +100,6 @@ fastify.post("/api/upload", async (request, reply) => {
   }
 });
 
-// Migration status endpoint
-// fastify.get(
-//   "/api/migration/status/:collection/:documentId",
-//   async (request, reply) => {
-//     try {
-//       const { collection, documentId } = request.params;
-
-//       const status = await firebase.getDocumentMigrationStatus(
-//         collection,
-//         documentId,
-//       );
-
-//       return {
-//         success: true,
-//         data: status,
-//       };
-//     } catch (error) {
-//       fastify.log.error("Failed to get migration status:", error);
-//       return reply.status(500).send({
-//         error: "Failed to get migration status",
-//         message: error.message,
-//       });
-//     }
-//   },
-// );
-
-// // Bulk migration status endpoint
-// fastify.post("/api/migration/status/bulk", async (request, reply) => {
-//   try {
-//     const { collection, documentIds } = request.body;
-
-//     if (!collection || !Array.isArray(documentIds)) {
-//       return reply.status(400).send({
-//         error: "Invalid request. Provide collection and documentIds array.",
-//       });
-//     }
-
-//     const results = await Promise.allSettled(
-//       documentIds.map((docId) =>
-//         firebase.getDocumentMigrationStatus(collection, docId),
-//       ),
-//     );
-
-//     const statuses = results.map((result, index) => ({
-//       documentId: documentIds[index],
-//       status: result.status === "fulfilled" ? result.value : null,
-//       error: result.status === "rejected" ? result.reason.message : null,
-//     }));
-
-//     return {
-//       success: true,
-//       data: statuses,
-//     };
-//   } catch (error) {
-//     fastify.log.error("Failed to get bulk migration status:", error);
-//     return reply.status(500).send({
-//       error: "Failed to get bulk migration status",
-//       message: error.message,
-//     });
-//   }
-// });
-
-// // Start migration endpoint
-// fastify.post("/api/migration/start", async (request, reply) => {
-//   try {
-//     const { collection, options = {} } = request.body;
-
-//     if (!collection) {
-//       return reply.status(400).send({
-//         error: "Collection name is required",
-//       });
-//     }
-
-//     // Initialize migration service
-//     const migration = new FirebaseToB2Migration();
-//     await migration.initialize();
-
-//     // Start migration in background
-//     const migrationPromise = migration.migrateCollection(collection, options);
-
-//     // Return immediately with job ID
-//     const jobId = `migration-${Date.now()}`;
-
-//     // Store migration promise for status checking (in production, use a proper job queue)
-//     global.migrationJobs = global.migrationJobs || {};
-//     global.migrationJobs[jobId] = migrationPromise;
-
-//     return {
-//       success: true,
-//       jobId: jobId,
-//       message: "Migration started in background",
-//       collection: collection,
-//       options: options,
-//     };
-//   } catch (error) {
-//     fastify.log.error("Failed to start migration:", error);
-//     return reply.status(500).send({
-//       error: "Failed to start migration",
-//       message: error.message,
-//     });
-//   }
-// });
-
-// // Migration job status endpoint
-// fastify.get("/api/migration/status/:jobId", async (request, reply) => {
-//   try {
-//     const { jobId } = request.params;
-
-//     if (!global.migrationJobs || !global.migrationJobs[jobId]) {
-//       return reply.status(404).send({
-//         error: "Migration job not found",
-//       });
-//     }
-
-//     const migrationPromise = global.migrationJobs[jobId];
-
-//     // Check if migration is complete
-//     if (migrationPromise.isFulfilled) {
-//       return {
-//         success: true,
-//         jobId: jobId,
-//         status: "completed",
-//         result: await migrationPromise,
-//       };
-//     } else if (migrationPromise.isRejected) {
-//       return {
-//         success: false,
-//         jobId: jobId,
-//         status: "failed",
-//         error: migrationPromise.reason,
-//       };
-//     } else {
-//       return {
-//         success: true,
-//         jobId: jobId,
-//         status: "running",
-//       };
-//     }
-//   } catch (error) {
-//     fastify.log.error("Failed to get migration job status:", error);
-//     return reply.status(500).send({
-//       error: "Failed to get migration job status",
-//       message: error.message,
-//     });
-//   }
-// });
-
-// // Retry failed migrations endpoint
-// fastify.post("/api/migration/retry", async (request, reply) => {
-//   try {
-//     const { collection } = request.body;
-
-//     if (!collection) {
-//       return reply.status(400).send({
-//         error: "Collection name is required",
-//       });
-//     }
-
-//     const migration = new FirebaseToB2Migration();
-//     await migration.initialize();
-
-//     const result = await migration.retryFailedMigrations(collection);
-
-//     return {
-//       success: true,
-//       data: result,
-//     };
-//   } catch (error) {
-//     fastify.log.error("Failed to retry failed migrations:", error);
-//     return reply.status(500).send({
-//       error: "Failed to retry failed migrations",
-//       message: error.message,
-//     });
-//   }
-// });
-
-// // Generate migration report endpoint
-// fastify.get("/api/migration/report", async (request, reply) => {
-//   try {
-//     const migration = new FirebaseToB2Migration();
-//     const report = migration.generateReport();
-
-//     return {
-//       success: true,
-//       data: report,
-//     };
-//   } catch (error) {
-//     fastify.log.error("Failed to generate migration report:", error);
-//     return reply.status(500).send({
-//       error: "Failed to generate migration report",
-//       message: error.message,
-//     });
-//   }
-// });
-
-// // Statistics endpoint
-// fastify.get("/api/migration/stats", async (request, reply) => {
-//   try {
-//     const { collection } = request.query;
-
-//     if (!collection) {
-//       return reply.status(400).send({
-//         error: "Collection parameter is required",
-//       });
-//     }
-
-//     // Get total documents in collection
-//     const totalSnapshot = await firebase.db.collection(collection).get();
-//     const totalDocuments = totalSnapshot.size;
-
-//     // Sample documents to estimate migration needs
-//     const sampleSize = Math.min(100, totalDocuments);
-//     let needsMigration = 0;
-//     let alreadyMigrated = 0;
-
-//     if (sampleSize > 0) {
-//       const sampleSnapshot = await firebase.db
-//         .collection(collection)
-//         .limit(sampleSize)
-//         .get();
-
-//       for (const doc of sampleSnapshot.docs) {
-//         const status = await firebase.getDocumentMigrationStatus(
-//           collection,
-//           doc.id,
-//         );
-//         if (status.needsMigration) {
-//           needsMigration++;
-//         } else if (status.totalBackblazeUrls > 0) {
-//           alreadyMigrated++;
-//         }
-//       }
-//     }
-
-//     const estimatedNeedsMigration =
-//       totalDocuments * (needsMigration / sampleSize);
-//     const estimatedAlreadyMigrated =
-//       totalDocuments * (alreadyMigrated / sampleSize);
-
-//     return {
-//       success: true,
-//       data: {
-//         collection: collection,
-//         totalDocuments: totalDocuments,
-//         sampledDocuments: sampleSize,
-//         needsMigration: Math.round(estimatedNeedsMigration),
-//         alreadyMigrated: Math.round(estimatedAlreadyMigrated),
-//         migrationPercentage:
-//           totalDocuments > 0
-//             ? Math.round((estimatedAlreadyMigrated / totalDocuments) * 100)
-//             : 0,
-//       },
-//     };
-//   } catch (error) {
-//     fastify.log.error("Failed to get migration statistics:", error);
-//     return reply.status(500).send({
-//       error: "Failed to get migration statistics",
-//       message: error.message,
-//     });
-//   }
-// });
-
 // ============================================
 // EMAIL ENDPOINTS
 // ============================================
@@ -411,7 +149,7 @@ fastify.post("/api/email/wishlist-reminder", async (request, reply) => {
     const result = await emailService.sendWishlistReminder(
       userEmail,
       userName,
-      product,
+      product
     );
 
     return {
@@ -428,13 +166,8 @@ fastify.post("/api/email/wishlist-reminder", async (request, reply) => {
 });
 
 // ============================================
-// ADMIN OTP ENDPOINTS
+// ADMIN OTP ENDPOINTS (Using Firestore)
 // ============================================
-
-// In-memory store for OTPs (in production, use Redis or database)
-const adminOtpStore = new Map();
-const adminVerificationStore = new Map();
-const adminOtpAttempts = new Map();
 
 // Generate 6-digit OTP
 function generateOtp() {
@@ -453,9 +186,7 @@ fastify.post("/api/admin/send-otp", async (request, reply) => {
     }
 
     // Check daily OTP attempts limit (5 per day)
-    const today = new Date().toDateString();
-    const attemptKey = `${adminId}-${today}`;
-    const attempts = adminOtpAttempts.get(attemptKey) || 0;
+    const attempts = await storeService.getAdminOtpAttempts(adminId);
 
     if (attempts >= 5) {
       return reply.status(429).send({
@@ -467,15 +198,11 @@ fastify.post("/api/admin/send-otp", async (request, reply) => {
     const otp = generateOtp();
     const expiresAt = Date.now() + 20 * 60 * 1000; // 20 minutes
 
-    // Store OTP
-    adminOtpStore.set(adminId, {
-      otp,
-      expiresAt,
-      email: adminEmail,
-    });
+    // Store OTP in Firestore
+    await storeService.storeAdminOtp(adminId, otp, adminEmail, expiresAt);
 
     // Increment attempts
-    adminOtpAttempts.set(attemptKey, attempts + 1);
+    await storeService.incrementAdminOtpAttempts(adminId);
 
     // Send OTP email
     const result = await emailService.sendAdminOtp(adminEmail, adminName, otp);
@@ -512,7 +239,7 @@ fastify.post("/api/admin/verify-otp", async (request, reply) => {
       });
     }
 
-    const storedOtp = adminOtpStore.get(adminId);
+    const storedOtp = await storeService.getAdminOtp(adminId);
 
     if (!storedOtp) {
       return reply.status(400).send({
@@ -522,7 +249,7 @@ fastify.post("/api/admin/verify-otp", async (request, reply) => {
     }
 
     if (Date.now() > storedOtp.expiresAt) {
-      adminOtpStore.delete(adminId);
+      await storeService.deleteAdminOtp(adminId);
       return reply.status(400).send({
         error: "OTP has expired. Please request a new one.",
         code: "OTP_EXPIRED",
@@ -538,13 +265,14 @@ fastify.post("/api/admin/verify-otp", async (request, reply) => {
 
     // OTP is valid - store verification
     const verificationExpiry = Date.now() + 2 * 24 * 60 * 60 * 1000; // 2 days
-    adminVerificationStore.set(adminId, {
-      verifiedAt: Date.now(),
-      expiresAt: verificationExpiry,
-    });
+    await storeService.storeAdminVerification(
+      adminId,
+      Date.now(),
+      verificationExpiry
+    );
 
     // Clear the OTP
-    adminOtpStore.delete(adminId);
+    await storeService.deleteAdminOtp(adminId);
 
     return {
       success: true,
@@ -573,7 +301,7 @@ fastify.get(
         });
       }
 
-      const verification = adminVerificationStore.get(adminId);
+      const verification = await storeService.getAdminVerification(adminId);
 
       if (!verification) {
         return {
@@ -584,7 +312,7 @@ fastify.get(
       }
 
       if (Date.now() > verification.expiresAt) {
-        adminVerificationStore.delete(adminId);
+        await storeService.deleteAdminVerification(adminId);
         return {
           success: true,
           verified: false,
@@ -605,15 +333,12 @@ fastify.get(
         message: error.message,
       });
     }
-  },
+  }
 );
 
 // ============================================
-// WISHLIST EMAIL SCHEDULER ENDPOINTS
+// WISHLIST EMAIL SCHEDULER ENDPOINTS (Using Firestore)
 // ============================================
-
-// Store for pending wishlist emails
-const wishlistEmailQueue = new Map();
 
 // Get settings from Firestore
 async function getWishlistEmailSettings() {
@@ -657,10 +382,8 @@ fastify.post("/api/wishlist/schedule-reminder", async (request, reply) => {
     const sendAt =
       (addedAt || Date.now()) + settings.delayHours * 60 * 60 * 1000;
 
-    // Store in queue
-    const queueKey = `${userId}-${product.id}`;
-    wishlistEmailQueue.set(queueKey, {
-      userId,
+    // Store in Firestore queue
+    await storeService.addToWishlistQueue(userId, product.id, {
       userEmail,
       userName,
       product,
@@ -689,10 +412,11 @@ fastify.delete(
   async (request, reply) => {
     try {
       const { userId, productId } = request.params;
-      const queueKey = `${userId}-${productId}`;
 
-      if (wishlistEmailQueue.has(queueKey)) {
-        wishlistEmailQueue.delete(queueKey);
+      const exists = await storeService.isInWishlistQueue(userId, productId);
+
+      if (exists) {
+        await storeService.removeFromWishlistQueue(userId, productId);
         return {
           success: true,
           message: "Wishlist reminder cancelled",
@@ -710,7 +434,7 @@ fastify.delete(
         message: error.message,
       });
     }
-  },
+  }
 );
 
 // Get/Update wishlist email settings (admin only)
@@ -764,43 +488,114 @@ fastify.put("/api/admin/settings/wishlist-email", async (request, reply) => {
   }
 });
 
-// Cron job to process wishlist email queue (runs every hour)
-cron.schedule("0 * * * *", async () => {
-  console.log("Processing wishlist email queue...");
-  const now = Date.now();
-  let sent = 0;
+// ============================================
+// VERCEL CRON ENDPOINTS
+// ============================================
 
-  for (const [key, item] of wishlistEmailQueue.entries()) {
-    if (now >= item.sendAt) {
+// Verify cron request is from Vercel
+function verifyCronRequest(request) {
+  const authHeader = request.headers["authorization"];
+  const cronSecret = process.env.CRON_SECRET;
+
+  // If CRON_SECRET is set, verify the request
+  if (cronSecret) {
+    return authHeader === `Bearer ${cronSecret}`;
+  }
+
+  // In development or if no secret is set, allow all requests
+  return true;
+}
+
+// Process wishlist email queue (called by Vercel Cron every hour)
+fastify.get("/api/cron/process-wishlist-emails", async (request, reply) => {
+  // Verify cron request
+  if (!verifyCronRequest(request)) {
+    return reply.status(401).send({ error: "Unauthorized" });
+  }
+
+  try {
+    console.log("Processing wishlist email queue...");
+
+    const pendingEmails = await storeService.getPendingWishlistEmails();
+    let sent = 0;
+    let failed = 0;
+
+    for (const item of pendingEmails) {
       try {
         await emailService.sendWishlistReminder(
           item.userEmail,
           item.userName,
-          item.product,
+          item.product
         );
-        wishlistEmailQueue.delete(key);
+        await storeService.deleteWishlistQueueItem(item.id);
         sent++;
         console.log(
-          `Sent wishlist reminder to ${item.userEmail} for product ${item.product.name}`,
+          `Sent wishlist reminder to ${item.userEmail} for product ${item.product.name}`
         );
       } catch (error) {
-        console.error(`Failed to send wishlist reminder for ${key}:`, error);
+        console.error(
+          `Failed to send wishlist reminder for ${item.id}:`,
+          error
+        );
+        failed++;
       }
     }
-  }
 
-  console.log(`Wishlist email queue processed. Sent ${sent} emails.`);
+    console.log(
+      `Wishlist email queue processed. Sent: ${sent}, Failed: ${failed}`
+    );
+
+    return {
+      success: true,
+      processed: pendingEmails.length,
+      sent,
+      failed,
+      timestamp: new Date().toISOString(),
+    };
+  } catch (error) {
+    fastify.log.error("Failed to process wishlist email queue:", error);
+    return reply.status(500).send({
+      error: "Failed to process wishlist email queue",
+      message: error.message,
+    });
+  }
 });
 
-// Clean up expired OTP attempts daily
-cron.schedule("0 0 * * *", () => {
-  console.log("Cleaning up expired OTP attempts...");
-  const today = new Date().toDateString();
+// Cleanup expired OTPs and old attempts (called by Vercel Cron daily)
+fastify.get("/api/cron/cleanup-otp", async (request, reply) => {
+  // Verify cron request
+  if (!verifyCronRequest(request)) {
+    return reply.status(401).send({ error: "Unauthorized" });
+  }
 
-  for (const key of adminOtpAttempts.keys()) {
-    if (!key.endsWith(today)) {
-      adminOtpAttempts.delete(key);
-    }
+  try {
+    console.log("Cleaning up expired OTPs and attempts...");
+
+    const [expiredOtps, expiredVerifications, oldAttempts] = await Promise.all([
+      storeService.cleanupExpiredOtps(),
+      storeService.cleanupExpiredVerifications(),
+      storeService.cleanupOldOtpAttempts(),
+    ]);
+
+    console.log(
+      `Cleanup complete. Expired OTPs: ${expiredOtps}, Expired verifications: ${expiredVerifications}, Old attempts: ${oldAttempts}`
+    );
+
+    return {
+      success: true,
+      cleaned: {
+        expiredOtps,
+        expiredVerifications,
+        oldAttempts,
+      },
+      timestamp: new Date().toISOString(),
+    };
+  } catch (error) {
+    fastify.log.error("Failed to cleanup OTPs:", error);
+    return reply.status(500).send({
+      error: "Failed to cleanup OTPs",
+      message: error.message,
+    });
   }
 });
 
@@ -876,7 +671,7 @@ fastify.get("/api/shipping/rate/:city", async (request, reply) => {
     // Find the rate for the city (case-insensitive)
     const cityLower = city.toLowerCase().trim();
     const cityRate = rates.find(
-      (r) => r.city.toLowerCase().trim() === cityLower,
+      (r) => r.city.toLowerCase().trim() === cityLower
     );
 
     return {
@@ -970,7 +765,7 @@ fastify.post("/api/admin/shipping/rates", async (request, reply) => {
 
     // Check if city already exists (case-insensitive)
     const existingIndex = currentRates.findIndex(
-      (r) => r.city.toLowerCase().trim() === city.toLowerCase().trim(),
+      (r) => r.city.toLowerCase().trim() === city.toLowerCase().trim()
     );
 
     if (existingIndex >= 0) {
@@ -1028,7 +823,7 @@ fastify.delete("/api/admin/shipping/rates/:city", async (request, reply) => {
     // Find and remove the city (case-insensitive)
     const cityLower = city.toLowerCase().trim();
     const newRates = currentRates.filter(
-      (r) => r.city.toLowerCase().trim() !== cityLower,
+      (r) => r.city.toLowerCase().trim() !== cityLower
     );
 
     if (newRates.length === currentRates.length) {

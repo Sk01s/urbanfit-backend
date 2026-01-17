@@ -70,48 +70,113 @@ class FirebaseAdmin {
   initializeMockService() {
     console.log("🔄 Initializing Firebase Admin Mock Service for development");
 
-    // Mock Firestore
+    // In-memory storage for mock data
+    const mockData = {};
+
+    // Mock Firestore with full CRUD support
     this.db = {
-      collection: (collectionName) => ({
-        doc: (docId) => ({
-          get: async () => ({
-            exists: true,
-            data: () => ({
-              image:
-                "https://firebasestorage.googleapis.com/v0/b/test.appspot.com/o/test.jpg",
-              name: "Test Product",
-              price: 99.99,
-            }),
+      collection: (collectionName) => {
+        // Initialize collection if it doesn't exist
+        if (!mockData[collectionName]) {
+          mockData[collectionName] = {};
+        }
+
+        return {
+          doc: (docId) => ({
+            get: async () => {
+              const data = mockData[collectionName][docId];
+              return {
+                exists: !!data,
+                data: () => data || null,
+                id: docId,
+              };
+            },
+            set: async (data, options = {}) => {
+              if (options.merge && mockData[collectionName][docId]) {
+                mockData[collectionName][docId] = {
+                  ...mockData[collectionName][docId],
+                  ...data,
+                };
+              } else {
+                mockData[collectionName][docId] = data;
+              }
+              console.log(`📝 Mock set: ${collectionName}/${docId}`, data);
+              return { success: true };
+            },
+            update: async (data) => {
+              if (mockData[collectionName][docId]) {
+                mockData[collectionName][docId] = {
+                  ...mockData[collectionName][docId],
+                  ...data,
+                };
+              }
+              console.log(`📝 Mock update: ${collectionName}/${docId}`, data);
+              return { success: true };
+            },
+            delete: async () => {
+              delete mockData[collectionName][docId];
+              console.log(`🗑️ Mock delete: ${collectionName}/${docId}`);
+              return { success: true };
+            },
           }),
-          update: async (data) => {
-            console.log(`📝 Mock update: ${collectionName}/${docId}`, data);
+          where: (field, operator, value) => ({
+            get: async () => {
+              const docs = Object.entries(mockData[collectionName] || {})
+                .filter(([id, data]) => {
+                  if (operator === "<") return data[field] < value;
+                  if (operator === "<=") return data[field] <= value;
+                  if (operator === "==") return data[field] === value;
+                  if (operator === ">") return data[field] > value;
+                  if (operator === ">=") return data[field] >= value;
+                  return false;
+                })
+                .map(([id, data]) => ({
+                  id,
+                  ref: { delete: async () => delete mockData[collectionName][id] },
+                  data: () => data,
+                }));
+              return { docs, size: docs.length };
+            },
+          }),
+          limit: (limit) => ({
+            get: async () => {
+              const docs = Object.entries(mockData[collectionName] || {})
+                .slice(0, limit)
+                .map(([id, data]) => ({
+                  id,
+                  data: () => data,
+                }));
+              return { docs, size: docs.length };
+            },
+          }),
+          get: async () => {
+            const docs = Object.entries(mockData[collectionName] || {}).map(
+              ([id, data]) => ({
+                id,
+                data: () => data,
+              })
+            );
+            return { docs, size: docs.length };
+          },
+        };
+      },
+      batch: () => {
+        const operations = [];
+        return {
+          delete: (ref) => operations.push({ type: "delete", ref }),
+          set: (ref, data) => operations.push({ type: "set", ref, data }),
+          update: (ref, data) => operations.push({ type: "update", ref, data }),
+          commit: async () => {
+            for (const op of operations) {
+              if (op.type === "delete" && op.ref.delete) {
+                await op.ref.delete();
+              }
+            }
+            console.log(`📦 Mock batch commit: ${operations.length} operations`);
             return { success: true };
           },
-        }),
-        limit: (limit) => ({
-          get: async () => ({
-            docs: [
-              {
-                id: "test1",
-                data: () => ({
-                  image:
-                    "https://firebasestorage.googleapis.com/v0/b/test.appspot.com/o/test1.jpg",
-                  name: "Test Product 1",
-                }),
-              },
-              {
-                id: "test2",
-                data: () => ({
-                  image:
-                    "https://firebasestorage.googleapis.com/v0/b/test.appspot.com/o/test2.jpg",
-                  name: "Test Product 2",
-                }),
-              },
-            ],
-            size: 2,
-          }),
-        }),
-      }),
+        };
+      },
     };
 
     // Mock Storage
