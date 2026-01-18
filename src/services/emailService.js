@@ -14,7 +14,9 @@ class EmailService {
     this.adminEmail = process.env.ADMIN_EMAIL;
 
     if (!apiKey) {
-      console.warn("RESEND_API_KEY not configured. Email service will be disabled.");
+      console.warn(
+        "RESEND_API_KEY not configured. Email service will be disabled.",
+      );
       return false;
     }
 
@@ -43,13 +45,13 @@ class EmailService {
             $${this.calculateItemPrice(item).toFixed(2)}
           </td>
         </tr>
-      `
+      `,
       )
       .join("");
 
     const subtotal = order.items.reduce(
       (sum, item) => sum + this.calculateItemPrice(item) * item.quantity,
-      0
+      0,
     );
     const discount = (subtotal * (order.promo?.percentage || 0)) / 100;
     // Use shippingRate from order (set during checkout based on city), fallback to legacy 'shipping' field or default
@@ -86,7 +88,7 @@ class EmailService {
           </div>
           <div>
             <p style="margin: 0; font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Payment Method</p>
-            <p style="margin: 4px 0 0; font-size: 16px; font-weight: 600; color: #111827;">${order.payment === "cod" ? "Cash on Delivery" : "Credit Card"}</p>
+            <p style="margin: 4px 0 0; font-size: 16px; font-weight: 600; color: #111827;">"Cash on Delivery"</p>
           </div>
         </div>
       </div>
@@ -175,13 +177,13 @@ class EmailService {
           <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.quantity}</td>
           <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right;">$${this.calculateItemPrice(item).toFixed(2)}</td>
         </tr>
-      `
+      `,
       )
       .join("");
 
     const subtotal = order.items.reduce(
       (sum, item) => sum + this.calculateItemPrice(item) * item.quantity,
-      0
+      0,
     );
     const discount = (subtotal * (order.promo?.percentage || 0)) / 100;
     // Use shippingRate from order (set during checkout based on city), fallback to legacy 'shipping' field or default
@@ -511,7 +513,10 @@ class EmailService {
     }
 
     try {
-      const html = this.generateWishlistReminderEmail({ name: userName, email: userEmail }, product);
+      const html = this.generateWishlistReminderEmail(
+        { name: userName, email: userEmail },
+        product,
+      );
       const result = await this.resend.emails.send({
         from: this.fromEmail,
         to: userEmail,
@@ -555,7 +560,7 @@ class EmailService {
   calculateOrderTotal(order) {
     const subtotal = order.items.reduce(
       (sum, item) => sum + this.calculateItemPrice(item) * item.quantity,
-      0
+      0,
     );
     const discount = (subtotal * (order.promo?.percentage || 0)) / 100;
     // Use shippingRate from order (set during checkout based on city), fallback to legacy 'shipping' field or default
