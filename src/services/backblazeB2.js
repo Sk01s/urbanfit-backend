@@ -11,12 +11,14 @@ class BackblazeB2Service {
     this.uploadUrl = null;
     this.uploadAuthorizationToken = null;
     this.downloadUrl = null;
+    this.s3Endpoint = null;
     this.config = {
       applicationKeyId: process.env.B2_APPLICATION_KEY_ID,
       applicationKey: process.env.B2_APPLICATION_KEY,
       bucketName: process.env.B2_BUCKET_NAME,
       bucketId: process.env.B2_BUCKET_ID,
       downloadUrl: process.env.B2_DOWNLOAD_URL,
+      s3Endpoint: process.env.B2_S3_ENDPOINT,
     };
   }
 
@@ -30,6 +32,9 @@ class BackblazeB2Service {
 
       const authResponse = await this.b2.authorize();
       const authorizedDownloadUrl = authResponse?.data?.downloadUrl;
+
+      // Get S3 endpoint from config or auth response
+      this.s3Endpoint = this.config.s3Endpoint || authResponse?.data?.s3Endpoint || null;
 
       // Get bucket info if not provided
       if (!this.config.bucketId) {
@@ -90,9 +95,12 @@ class BackblazeB2Service {
       const fileId = uploadResponse.data.fileId;
       const fileNameInB2 = uploadResponse.data.fileName;
 
-      const baseUrl = this.config.downloadUrl || this.downloadUrl || "https://f002.backblazeb2.com";
-      const encodedFileName = encodeURI(fileNameInB2);
-      const publicUrl = `${baseUrl}/file/${this.bucketName}/${encodedFileName}`;
+      // Use S3 endpoint for the URL (more reliable than friendly URL)
+      const baseUrl = this.s3Endpoint 
+        ? `https://${this.s3Endpoint}`
+        : `https://${this.bucketName}.s3.eu-central-003.backblazeb2.com`;
+      const encodedFileName = encodeURIComponent(fileNameInB2);
+      const publicUrl = `${baseUrl}/${fileNameInB2}`;
 
       return {
         fileId,
@@ -152,8 +160,10 @@ class BackblazeB2Service {
   }
 
   getPublicUrl(fileName) {
-    const baseUrl = this.config.downloadUrl || this.downloadUrl || "https://f002.backblazeb2.com";
-    return `${baseUrl}/file/${this.bucketName}/${encodeURI(fileName)}`;
+    const baseUrl = this.s3Endpoint 
+      ? `https://${this.s3Endpoint}`
+      : `https://${this.bucketName}.s3.eu-central-003.backblazeb2.com`;
+    return `${baseUrl}/${fileName}`;
   }
 
   // Refresh upload credentials
