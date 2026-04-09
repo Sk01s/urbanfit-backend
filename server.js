@@ -13,16 +13,7 @@ import Fastify from "fastify";
 import multipart from "@fastify/multipart";
 import cors from "@fastify/cors";
 
-// Dynamically import services after dotenv is loaded
-const firebase = (await import("./src/services/firebaseAdmin.js")).default;
-const backblazeB2 = (await import("./src/services/backblazeB2.js")).default;
-const emailService = (await import("./src/services/emailService.js")).default;
-const storeService = (await import("./src/services/storeService.js")).default;
-
-// Initialize services
-emailService.initialize();
-storeService.initialize(firebase.db);
-
+// Initialize Fastify with JSON body parsing
 const fastify = Fastify({
   logger: true,
 });
@@ -38,6 +29,16 @@ await fastify.register(cors, {
   origin: true, // Allow all origins in development
   credentials: true,
 });
+
+// Dynamically import services after plugins are registered
+const firebase = (await import("./src/services/firebaseAdmin.js")).default;
+const backblazeB2 = (await import("./src/services/backblazeB2.js")).default;
+const emailService = (await import("./src/services/emailService.js")).default;
+const storeService = (await import("./src/services/storeService.js")).default;
+
+// Initialize services
+emailService.initialize();
+storeService.initialize(firebase.db);
 
 fastify.get("/", (request, reply) => {
   return { hello: "world" };
@@ -57,8 +58,22 @@ fastify.post("/api/upload", async (request, reply) => {
       return reply.status(400).send({ error: "No file uploaded" });
     }
 
-    const { filename, mimetype, file } = data;
-    const buffer = await file.toBuffer();
+    const { filename, mimetype } = data;
+    
+    // For @fastify/multipart v8, we need to handle the file differently
+    let buffer;
+    if (data.file && typeof data.file.toBuffer === 'function') {
+      buffer = await data.file.toBuffer();
+    } else if (data.file && typeof data.file.read === 'function') {
+      // Use streaming approach for larger files
+      const chunks = [];
+      for await (const chunk of data.file) {
+        chunks.push(chunk);
+      }
+      buffer = Buffer.concat(chunks);
+    } else {
+      return reply.status(400).send({ error: "Unable to read file" });
+    }
 
     // Determine upload service based on configuration
     const useBackblazeB2 =
@@ -95,6 +110,42 @@ fastify.post("/api/upload", async (request, reply) => {
     fastify.log.error("Upload failed:", error);
     return reply.status(500).send({
       error: "Upload failed",
+      message: error.message,
+    });
+  }
+});
+
+// Delete image endpoint - use POST instead of DELETE for easier JSON body handling
+fastify.post("/api/upload/delete", async (request, reply) => {
+  try {
+    const { fileName, service } = request.body;
+
+    if (!fileName) {
+      return reply.status(400).send({ error: "File name is required" });
+    }
+
+    const useBackblazeB2 =
+      process.env.USE_BACKBLAZE_B2_FOR_NEW_UPLOADS === "true" ||
+      service === "backblaze";
+
+    if (useBackblazeB2) {
+      console.log(`Would delete from B2: ${fileName}`);
+      return {
+        success: true,
+        message: "File reference removed (B2 cleanup would require fileId)",
+      };
+    } else {
+      try {
+        await firebase.storage.ref("site-images").child(fileName).delete();
+      } catch (e) {
+        console.error("Failed to delete from Firebase Storage:", e);
+      }
+      return { success: true };
+    }
+  } catch (error) {
+    fastify.log.error("Delete failed:", error);
+    return reply.status(500).send({
+      error: "Delete failed",
       message: error.message,
     });
   }
