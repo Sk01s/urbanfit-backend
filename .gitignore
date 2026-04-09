@@ -35,3 +35,4 @@ service-account.json
 tmp/
 temp/
 *.tmp
+.vercel
