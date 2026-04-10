@@ -73,19 +73,34 @@ class BackblazeB2Service {
     }
   }
 
-  async uploadFile(fileBuffer, fileName, contentType, options = {}) {
-    try {
-      if (!this.uploadUrl || !this.uploadAuthorizationToken) {
-        await this.initialize();
-      }
+  async _getFreshUploadCredentials() {
+    if (!this.b2) {
+      await this.initialize();
+    }
 
+    const uploadResponse = await this.b2.getUploadUrl({
+      bucketId: this.bucketId,
+    });
+
+    return {
+      uploadUrl: uploadResponse.data.uploadUrl,
+      authorizationToken: uploadResponse.data.authorizationToken,
+    };
+  }
+
+  async uploadFile(fileBuffer, fileName, contentType, options = {}) {
+    // Always get a fresh upload URL/token for each upload to avoid
+    // B2 "auth_token_limit" errors when multiple uploads run concurrently
+    const { uploadUrl, authorizationToken } = await this._getFreshUploadCredentials();
+
+    try {
       // Generate unique filename if not provided
       const uniqueFileName = fileName || `${uuidv4()}-${Date.now()}`;
 
       // Upload file to B2
       const uploadResponse = await this.b2.uploadFile({
-        uploadUrl: this.uploadUrl,
-        uploadAuthToken: this.uploadAuthorizationToken,
+        uploadUrl: uploadUrl,
+        uploadAuthToken: authorizationToken,
         fileName: uniqueFileName,
         data: fileBuffer,
         mime: contentType,
@@ -99,7 +114,6 @@ class BackblazeB2Service {
       const baseUrl = this.s3Endpoint 
         ? `https://${this.s3Endpoint}`
         : `https://${this.bucketName}.s3.eu-central-003.backblazeb2.com`;
-      const encodedFileName = encodeURIComponent(fileNameInB2);
       const publicUrl = `${baseUrl}/${fileNameInB2}`;
 
       return {
@@ -112,11 +126,40 @@ class BackblazeB2Service {
     } catch (error) {
       console.error("Failed to upload file to Backblaze B2:", error);
 
-      // If upload fails due to expired token, refresh and retry once
-      if (error.response && error.response.status === 401) {
-        console.log("Refreshing B2 upload token and retrying...");
-        await this.initialize();
-        return this.uploadFile(fileBuffer, fileName, contentType, options);
+      // If upload fails due to expired auth or token limit, get fresh credentials and retry once
+      const b2ErrorCode = error?.response?.data?.code;
+      if (
+        (error.response && error.response.status === 401) ||
+        b2ErrorCode === 'auth_token_limit'
+      ) {
+        console.log(`Retrying upload after B2 error: ${b2ErrorCode || error.response?.status}`);
+        const freshCreds = await this._getFreshUploadCredentials();
+        const uniqueFileName = fileName || `${uuidv4()}-${Date.now()}`;
+
+        const retryResponse = await this.b2.uploadFile({
+          uploadUrl: freshCreds.uploadUrl,
+          uploadAuthToken: freshCreds.authorizationToken,
+          fileName: uniqueFileName,
+          data: fileBuffer,
+          mime: contentType,
+          ...options,
+        });
+
+        const fileId = retryResponse.data.fileId;
+        const fileNameInB2 = retryResponse.data.fileName;
+
+        const baseUrl = this.s3Endpoint 
+          ? `https://${this.s3Endpoint}`
+          : `https://${this.bucketName}.s3.eu-central-003.backblazeb2.com`;
+        const publicUrl = `${baseUrl}/${fileNameInB2}`;
+
+        return {
+          fileId,
+          fileName: fileNameInB2,
+          url: publicUrl,
+          bucketName: this.bucketName,
+          uploadTimestamp: new Date().toISOString(),
+        };
       }
 
       throw error;
