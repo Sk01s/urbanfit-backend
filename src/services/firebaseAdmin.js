@@ -177,6 +177,23 @@ class FirebaseAdmin {
           },
         };
       },
+      runTransaction: async (updateFunction) => {
+        const mockTransaction = {
+          get: async (docRef) => {
+            return docRef.get();
+          },
+          set: (docRef, data) => {
+            return docRef.set(data);
+          },
+          update: (docRef, data) => {
+            return docRef.update(data);
+          },
+          delete: (docRef) => {
+            return docRef.delete();
+          },
+        };
+        return await updateFunction(mockTransaction);
+      },
     };
 
     // Mock Storage
